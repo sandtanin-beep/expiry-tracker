@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>ทดสอบกล้อง</title>
+<style>
+body{font-family:sans-serif;padding:20px;background:#f5f5f5;color:#222}
+h2{font-size:18px;margin-bottom:16px}
+button{display:block;width:100%;padding:14px;margin-bottom:10px;font-size:15px;border-radius:10px;border:none;background:#1a1a1a;color:#fff;cursor:pointer}
+button:active{opacity:.7}
+video{width:100%;border-radius:10px;background:#000;display:block;margin-top:12px}
+#log{margin-top:16px;background:#fff;border-radius:10px;padding:12px;font-size:13px;min-height:80px;white-space:pre-wrap;word-break:break-all}
+.ok{color:green;font-weight:600}
+.err{color:red;font-weight:600}
+</style>
+</head>
+<body>
+<h2>🎥 ทดสอบการเปิดกล้อง</h2>
+
+<button onclick="testMethod1()">วิธี 1: getUserMedia environment</button>
+<button onclick="testMethod2()">วิธี 2: getUserMedia facingMode exact</button>
+<button onclick="testMethod3()">วิธี 3: getUserMedia ไม่ระบุกล้อง</button>
+<button onclick="testMethod4()">วิธี 4: enumerateDevices แล้วเลือกกล้องหลัง</button>
+<button onclick="stopCam()" style="background:#666">⏹ หยุดกล้อง</button>
+
+<video id="vid" autoplay playsinline muted></video>
+<div id="log">กดปุ่มเพื่อทดสอบ...</div>
+
+<script>
+let stream = null;
+const log = document.getElementById('log');
+const vid = document.getElementById('vid');
+
+function addLog(msg, type=''){
+  log.innerHTML += `<span class="${type}">${msg}</span>\n`;
+  log.scrollTop = log.scrollHeight;
+}
+function clearLog(){ log.innerHTML = ''; }
+
+async function stopCam(){
+  if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; vid.srcObject=null; }
+  addLog('⏹ หยุดกล้องแล้ว');
+}
+
+async function testMethod1(){
+  clearLog(); await stopCam();
+  addLog('วิธี 1: {video:{facingMode:"environment"}}...');
+  try{
+    stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'},audio:false});
+    vid.srcObject = stream;
+    addLog('✓ สำเร็จ! กล้องเปิดได้', 'ok');
+    const track = stream.getVideoTracks()[0];
+    addLog('กล้อง: '+track.label);
+  }catch(e){ addLog('✗ ล้มเหลว: '+e.name+' - '+e.message,'err'); }
+}
+
+async function testMethod2(){
+  clearLog(); await stopCam();
+  addLog('วิธี 2: {video:{facingMode:{exact:"environment"}}}...');
+  try{
+    stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:{exact:'environment'}},audio:false});
+    vid.srcObject = stream;
+    addLog('✓ สำเร็จ!', 'ok');
+    addLog('กล้อง: '+stream.getVideoTracks()[0].label);
+  }catch(e){ addLog('✗ ล้มเหลว: '+e.name+' - '+e.message,'err'); }
+}
+
+async function testMethod3(){
+  clearLog(); await stopCam();
+  addLog('วิธี 3: {video:true} ไม่ระบุกล้อง...');
+  try{
+    stream = await navigator.mediaDevices.getUserMedia({video:true,audio:false});
+    vid.srcObject = stream;
+    addLog('✓ สำเร็จ!', 'ok');
+    addLog('กล้อง: '+stream.getVideoTracks()[0].label);
+  }catch(e){ addLog('✗ ล้มเหลว: '+e.name+' - '+e.message,'err'); }
+}
+
+async function testMethod4(){
+  clearLog(); await stopCam();
+  addLog('วิธี 4: enumerateDevices...');
+  try{
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const cams = devices.filter(d=>d.kind==='videoinput');
+    addLog('พบกล้อง '+cams.length+' ตัว:');
+    cams.forEach((c,i)=>addLog(`  [${i}] ${c.label||'ไม่มีชื่อ'} (${c.deviceId.slice(0,12)}...)`));
+    const back = cams.find(c=>c.label.toLowerCase().includes('back')||c.label.toLowerCase().includes('rear')||c.label.toLowerCase().includes('environment'))||cams[cams.length-1];
+    if(!back){addLog('✗ ไม่พบกล้อง','err');return}
+    addLog('เลือก: '+back.label);
+    stream = await navigator.mediaDevices.getUserMedia({video:{deviceId:{exact:back.deviceId}},audio:false});
+    vid.srcObject = stream;
+    addLog('✓ สำเร็จ!','ok');
+  }catch(e){ addLog('✗ ล้มเหลว: '+e.name+' - '+e.message,'err'); }
+}
+
+// ตรวจสอบ browser support
+addLog('Browser: '+navigator.userAgent.slice(0,80));
+addLog('getUserMedia: '+(!!navigator.mediaDevices?.getUserMedia?'✓ รองรับ':'✗ ไม่รองรับ'));
+addLog('HTTPS: '+(location.protocol==='https:'?'✓ ใช่':'✗ ไม่ใช่ (กล้องต้องการ HTTPS)'));
+</script>
+</body>
+</html>
