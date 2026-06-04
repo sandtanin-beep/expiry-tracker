@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>ทดสอบ AI อ่านบาร์โค้ด + วันหมดอายุ</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:sans-serif;background:#111;color:#fff;padding:16px;min-height:100vh}
+h2{font-size:17px;margin-bottom:4px;text-align:center}
+.sub{font-size:12px;color:#aaa;text-align:center;margin-bottom:16px}
+.section{background:#1a1a1a;border-radius:12px;padding:14px;margin-bottom:12px}
+.section h3{font-size:14px;font-weight:600;margin-bottom:10px;color:#FFD166}
+button{width:100%;padding:13px;margin-bottom:8px;font-size:14px;border-radius:10px;border:none;cursor:pointer;font-weight:600;display:block}
+.btn-white{background:#fff;color:#111}
+.btn-yellow{background:#FFD166;color:#111}
+.btn-gray{background:#333;color:#fff}
+video{width:100%;border-radius:10px;background:#000;display:block;margin:8px 0}
+canvas{width:100%;border-radius:10px;margin:4px 0;display:none}
+#result{background:#0a0a0a;border-radius:10px;padding:12px;font-size:13px;min-height:60px;margin-top:8px;white-space:pre-wrap;word-break:break-all;line-height:1.7}
+.ok{color:#7CCA5A}
+.err{color:#FF6B6B}
+.info{color:#FFD166}
+.result-box{border-radius:10px;padding:14px;text-align:center;margin-top:8px}
+.result-ok{background:#1e3a1e;border:1px solid #7CCA5A}
+.result-err{background:#3a1e1e;border:1px solid #FF6B6B}
+.big{font-size:22px;font-weight:700;margin:6px 0}
+input[type=file]{display:none}
+.tip{font-size:11px;color:#666;text-align:center;margin-top:4px}
+</style>
+</head>
+<body>
+<h2>🤖 ทดสอบ AI อ่านภาพ</h2>
+<p class="sub">บาร์โค้ด + วันหมดอายุ ผ่าน Cloudflare Worker</p>
+
+<!-- บาร์โค้ด -->
+<div class="section">
+  <h3>📦 ทดสอบอ่านบาร์โค้ด</h3>
+  <button class="btn-white" onclick="openCam('barcode')">📷 เปิดกล้องถ่ายบาร์โค้ด</button>
+  <button class="btn-white" onclick="document.getElementById('file-barcode').click()">🖼️ เลือกรูปบาร์โค้ดจากคลัง</button>
+  <input type="file" id="file-barcode" accept="image/*" onchange="readFile(this,'barcode')">
+  <p class="tip">จ่อกล้องให้เห็นบาร์โค้ดชัดๆ แล้วกดถ่าย</p>
+</div>
+
+<!-- วันหมดอายุ -->
+<div class="section">
+  <h3>📅 ทดสอบอ่านวันหมดอายุ</h3>
+  <button class="btn-white" onclick="openCam('expiry')">📷 เปิดกล้องถ่ายวันหมดอายุ</button>
+  <button class="btn-white" onclick="document.getElementById('file-expiry').click()">🖼️ เลือกรูปจากคลัง</button>
+  <input type="file" id="file-expiry" accept="image/*" onchange="readFile(this,'expiry')">
+  <p class="tip">จ่อให้เห็นตัวเลขวันหมดอายุชัดๆ แล้วกดถ่าย</p>
+</div>
+
+<!-- กล้อง -->
+<div id="cam-section" style="display:none">
+  <video id="vid" autoplay playsinline muted></video>
+  <canvas id="cvs"></canvas>
+  <button class="btn-yellow" id="btn-capture" onclick="capture()">📸 ถ่ายภาพ</button>
+  <button class="btn-gray" onclick="stopCam()">✕ ยกเลิก</button>
+  <p class="tip" id="cam-tip"></p>
+</div>
+
+<!-- ผลลัพธ์ -->
+<div id="result">รอผลการทดสอบ...</div>
+
+<script>
+const WORKER = 'https://expiry-api.sandtanin.workers.dev/';
+let stream = null;
+let currentMode = null;
+
+function log(msg, type=''){
+  document.getElementById('result').innerHTML += `<span class="${type}">${msg}</span>\n`;
+}
+function clearLog(){ document.getElementById('result').innerHTML = ''; }
+
+async function openCam(mode){
+  currentMode = mode;
+  clearLog();
+  const camSec = document.getElementById('cam-section');
+  const vid = document.getElementById('vid');
+  const cvs = document.getElementById('cvs');
+  cvs.style.display = 'none';
+  vid.style.display = 'block';
+  document.getElementById('btn-capture').style.display = 'block';
+  document.getElementById('cam-tip').textContent = mode === 'barcode'
+    ? 'จ่อกล้องให้เห็นบาร์โค้ดชัดๆ ไม่สั่น แล้วกดถ่าย'
+    : 'จ่อกล้องให้เห็นวันหมดอายุชัดๆ แสงสว่างพอ แล้วกดถ่าย';
+  try{
+    try{
+      stream = await navigator.mediaDevices.getUserMedia({
+        video:{facingMode:'environment', width:{ideal:1920}, height:{ideal:1080}},
+        audio:false
+      });
+    }catch(e){
+      stream = await navigator.mediaDevices.getUserMedia({
+        video:{facingMode:{exact:'environment'}},
+        audio:false
+      });
+    }
+    vid.srcObject = stream;
+    camSec.style.display = 'block';
+    log('✓ กล้องเปิดได้ กดถ่ายภาพได้เลย','ok');
+  }catch(e){
+    log('✗ เปิดกล้องไม่ได้: '+e.message,'err');
+  }
+}
+
+function stopCam(){
+  if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; }
+  document.getElementById('vid').srcObject = null;
+  document.getElementById('cam-section').style.display = 'none';
+}
+
+function capture(){
+  const vid = document.getElementById('vid');
+  const cvs = document.getElementById('cvs');
+  // ใช้ความละเอียดเต็มของกล้อง
+  cvs.width = vid.videoWidth;
+  cvs.height = vid.videoHeight;
+  cvs.getContext('2d').drawImage(vid, 0, 0);
+  cvs.style.display = 'block';
+  vid.style.display = 'none';
+  document.getElementById('btn-capture').style.display = 'none';
+  stopCam();
+  // ส่งคุณภาพสูง
+  const base64 = cvs.toDataURL('image/jpeg', 0.97).split(',')[1];
+  log(`ขนาดรูป: ${Math.round(base64.length/1024)} KB`,'info');
+  sendToWorker(base64, currentMode);
+}
+
+function readFile(input, mode){
+  if(!input.files[0]) return;
+  currentMode = mode;
+  clearLog();
+  log('กำลังอ่านรูป...','info');
+  const reader = new FileReader();
+  reader.onload = async(e) => {
+    // แสดงรูปบน canvas
+    const img = new Image();
+    img.onload = () => {
+      const cvs = document.getElementById('cvs');
+      cvs.width = img.width;
+      cvs.height = img.height;
+      cvs.getContext('2d').drawImage(img, 0, 0);
+      cvs.style.display = 'block';
+      document.getElementById('cam-section').style.display = 'block';
+      document.getElementById('vid').style.display = 'none';
+      document.getElementById('btn-capture').style.display = 'none';
+    };
+    img.src = e.target.result;
+    const base64 = e.target.result.split(',')[1];
+    log(`ขนาดรูป: ${Math.round(base64.length/1024)} KB`,'info');
+    sendToWorker(base64, mode);
+  };
+  reader.readAsDataURL(input.files[0]);
+}
+
+async function sendToWorker(base64, mode){
+  log(`📡 กำลังส่งให้ AI อ่าน (mode: ${mode})...`,'info');
+  try{
+    const resp = await fetch(WORKER, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({imageBase64: base64, mode: mode})
+    });
+    log(`HTTP: ${resp.status}`, resp.ok?'ok':'err');
+    const text = await resp.text();
+    log(`Response: ${text}`,'info');
+
+    let parsed;
+    try{ parsed = JSON.parse(text); }
+    catch(e){ log('✗ Parse ไม่ได้','err'); return; }
+
+    const resultEl = document.getElementById('result');
+
+    if(mode === 'barcode'){
+      if(parsed.found && parsed.barcode){
+        resultEl.innerHTML += `<div class="result-box result-ok">
+          <div style="color:#7CCA5A;font-size:12px">✓ พบบาร์โค้ด</div>
+          <div class="big" style="color:#fff">${parsed.barcode}</div>
+        </div>`;
+      } else {
+        resultEl.innerHTML += `<div class="result-box result-err">
+          <div style="color:#FF6B6B">✗ ไม่พบบาร์โค้ด</div>
+          <div style="font-size:12px;color:#aaa;margin-top:4px">ลองถ่ายใหม่ให้ชัดขึ้น ไม่สั่น มีแสงพอ</div>
+        </div>`;
+      }
+    } else {
+      if(parsed.found && parsed.date){
+        const dateStr = new Date(parsed.date).toLocaleDateString('th-TH',{day:'numeric',month:'long',year:'numeric'});
+        resultEl.innerHTML += `<div class="result-box result-ok">
+          <div style="color:#7CCA5A;font-size:12px">✓ พบวันหมดอายุ</div>
+          <div class="big" style="color:#fff">${dateStr}</div>
+          <div style="font-size:11px;color:#aaa">${parsed.date}</div>
+        </div>`;
+      } else {
+        resultEl.innerHTML += `<div class="result-box result-err">
+          <div style="color:#FF6B6B">✗ ไม่พบวันหมดอายุ</div>
+          <div style="font-size:12px;color:#aaa;margin-top:4px">ลองถ่ายใหม่ให้ใกล้ขึ้น แสงสว่างพอ เห็นตัวเลขชัดๆ</div>
+        </div>`;
+      }
+    }
+  }catch(e){
+    log('✗ Error: '+e.message,'err');
+  }
+}
+</script>
+</body>
+</html>
